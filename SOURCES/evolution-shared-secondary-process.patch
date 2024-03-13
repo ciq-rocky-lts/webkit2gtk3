@@ -1,0 +1,26 @@
+From ffe84688fc8a91b1e6d1c4462120fc44349a7c05 Mon Sep 17 00:00:00 2001
+From: Michael Catanzaro <mcatanzaro@redhat.com>
+Date: Thu, 27 Oct 2022 19:12:43 -0500
+Subject: [PATCH] Force Evolution to use single secondary process
+
+---
+ Source/WebKit/UIProcess/API/glib/WebKitWebContext.cpp | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/Source/WebKit/UIProcess/API/glib/WebKitWebContext.cpp b/Source/WebKit/UIProcess/API/glib/WebKitWebContext.cpp
+index 6bb6767869af..2a05a69d9b0d 100644
+--- a/Source/WebKit/UIProcess/API/glib/WebKitWebContext.cpp
++++ b/Source/WebKit/UIProcess/API/glib/WebKitWebContext.cpp
+@@ -431,6 +431,9 @@ static void webkitWebContextConstructed(GObject* object)
+     }
+     configuration.setTimeZoneOverride(String::fromUTF8(priv->timeZoneOverride.data(), priv->timeZoneOverride.length()));
+ 
++    if (!g_strcmp0(g_get_prgname(), "evolution"))
++        configuration.setUsesSingleWebProcess(true);
++
+     if (!priv->websiteDataManager)
+         priv->websiteDataManager = adoptGRef(webkit_website_data_manager_new("local-storage-directory", priv->localStorageDirectory.data(), nullptr));
+ 
+-- 
+2.31.1
+

@@ -1,0 +1,164 @@
+From 833cfdd150b6f7f0fb021ac5de7890dff158f5fd Mon Sep 17 00:00:00 2001
+From: Michael Catanzaro <mcatanzaro@redhat.com>
+Date: Thu, 27 Oct 2022 16:32:43 -0500
+Subject: [PATCH] Build against ICU 60
+
+---
+ Source/JavaScriptCore/runtime/IntlCache.cpp        |  3 +++
+ Source/JavaScriptCore/runtime/IntlCache.h          |  3 +++
+ Source/JavaScriptCore/runtime/IntlDisplayNames.cpp | 11 +++++++++++
+ Source/JavaScriptCore/runtime/IntlDisplayNames.h   |  7 +++++++
+ Source/JavaScriptCore/runtime/IntlObject.cpp       |  6 +++++-
+ Source/cmake/OptionsGTK.cmake                      |  2 +-
+ 6 files changed, 30 insertions(+), 2 deletions(-)
+
+diff --git a/Source/JavaScriptCore/runtime/IntlCache.cpp b/Source/JavaScriptCore/runtime/IntlCache.cpp
+index b17d7340df56..94a5474059b6 100644
+--- a/Source/JavaScriptCore/runtime/IntlCache.cpp
++++ b/Source/JavaScriptCore/runtime/IntlCache.cpp
+@@ -26,6 +26,7 @@
+ #include "config.h"
+ #include "IntlCache.h"
+ 
++#include "IntlDisplayNames.h"
+ #include <wtf/Vector.h>
+ 
+ namespace JSC {
+@@ -53,6 +54,7 @@ Vector<UChar, 32> IntlCache::getBestDateTimePattern(const CString& locale, const
+     return patternBuffer;
+ }
+ 
++#if HAVE(ICU_U_LOCALE_DISPLAY_NAMES)
+ Vector<UChar, 32> IntlCache::getFieldDisplayName(const CString& locale, UDateTimePatternField field, UDateTimePGDisplayWidth width, UErrorCode& status)
+ {
+     auto sharedGenerator = getSharedPatternGenerator(locale, status);
+@@ -64,5 +66,6 @@ Vector<UChar, 32> IntlCache::getFieldDisplayName(const CString& locale, UDateTim
+         return { };
+     return buffer;
+ }
++#endif
+ 
+ } // namespace JSC
+diff --git a/Source/JavaScriptCore/runtime/IntlCache.h b/Source/JavaScriptCore/runtime/IntlCache.h
+index 058b2423786d..e7a8c82f392b 100644
+--- a/Source/JavaScriptCore/runtime/IntlCache.h
++++ b/Source/JavaScriptCore/runtime/IntlCache.h
+@@ -25,6 +25,7 @@
+ 
+ #pragma once
+ 
++#include "IntlDisplayNames.h"
+ #include <unicode/udatpg.h>
+ #include <wtf/Noncopyable.h>
+ #include <wtf/text/CString.h>
+@@ -39,7 +40,9 @@ public:
+     IntlCache() = default;
+ 
+     Vector<UChar, 32> getBestDateTimePattern(const CString& locale, const UChar* skeleton, unsigned skeletonSize, UErrorCode&);
++#if HAVE(ICU_U_LOCALE_DISPLAY_NAMES)
+     Vector<UChar, 32> getFieldDisplayName(const CString& locale, UDateTimePatternField, UDateTimePGDisplayWidth, UErrorCode&);
++#endif
+ 
+ private:
+     UDateTimePatternGenerator* getSharedPatternGenerator(const CString& locale, UErrorCode& status)
+diff --git a/Source/JavaScriptCore/runtime/IntlDisplayNames.cpp b/Source/JavaScriptCore/runtime/IntlDisplayNames.cpp
+index c281f796eaee..1bc3c0c8a8c6 100644
+--- a/Source/JavaScriptCore/runtime/IntlDisplayNames.cpp
++++ b/Source/JavaScriptCore/runtime/IntlDisplayNames.cpp
+@@ -110,6 +110,7 @@ void IntlDisplayNames::initializeDisplayNames(JSGlobalObject* globalObject, JSVa
+     m_languageDisplay = intlOption<LanguageDisplay>(globalObject, options, vm.propertyNames->languageDisplay, { { "dialect"_s, LanguageDisplay::Dialect }, { "standard"_s, LanguageDisplay::Standard } }, "languageDisplay must be either \"dialect\" or \"standard\""_s, LanguageDisplay::Dialect);
+     RETURN_IF_EXCEPTION(scope, void());
+ 
++#if HAVE(ICU_U_LOCALE_DISPLAY_NAMES)
+     UErrorCode status = U_ZERO_ERROR;
+ 
+     UDisplayContext contexts[] = {
+@@ -137,6 +138,10 @@ void IntlDisplayNames::initializeDisplayNames(JSGlobalObject* globalObject, JSVa
+         throwTypeError(globalObject, scope, "failed to initialize DisplayNames"_s);
+         return;
+     }
++#else
++        throwTypeError(globalObject, scope, "failed to initialize Intl.DisplayNames since feature is not supported by the ICU version"_s);
++        return;
++#endif
+ }
+ 
+ // https://tc39.es/proposal-intl-displaynames/#sec-Intl.DisplayNames.prototype.of
+@@ -146,6 +151,7 @@ JSValue IntlDisplayNames::of(JSGlobalObject* globalObject, JSValue codeValue) co
+     VM& vm = globalObject->vm();
+     auto scope = DECLARE_THROW_SCOPE(vm);
+ 
++#if HAVE(ICU_U_LOCALE_DISPLAY_NAMES)
+     ASSERT(m_displayNames);
+     auto code = codeValue.toWTFString(globalObject);
+     RETURN_IF_EXCEPTION(scope, { });
+@@ -350,6 +356,11 @@ JSValue IntlDisplayNames::of(JSGlobalObject* globalObject, JSValue codeValue) co
+         return throwTypeError(globalObject, scope, "Failed to query a display name."_s);
+     }
+     return jsString(vm, String(WTFMove(buffer)));
++#else
++    UNUSED_PARAM(codeValue);
++    throwTypeError(globalObject, scope, "failed to initialize Intl.DisplayNames since feature is not supported by the ICU version"_s);
++    return { };
++#endif
+ }
+ 
+ // https://tc39.es/proposal-intl-displaynames/#sec-Intl.DisplayNames.prototype.resolvedOptions
+diff --git a/Source/JavaScriptCore/runtime/IntlDisplayNames.h b/Source/JavaScriptCore/runtime/IntlDisplayNames.h
+index d80dc3d83a15..f2bf36275c79 100644
+--- a/Source/JavaScriptCore/runtime/IntlDisplayNames.h
++++ b/Source/JavaScriptCore/runtime/IntlDisplayNames.h
+@@ -29,6 +29,13 @@
+ #include <unicode/uldnames.h>
+ #include <wtf/unicode/icu/ICUHelpers.h>
+ 
++#if !defined(HAVE_ICU_U_LOCALE_DISPLAY_NAMES)
++// We need 61 or later since part of implementation uses UCURR_NARROW_SYMBOL_NAME.
++#if U_ICU_VERSION_MAJOR_NUM >= 61
++#define HAVE_ICU_U_LOCALE_DISPLAY_NAMES 1
++#endif
++#endif
++
+ namespace JSC {
+ 
+ enum class RelevantExtensionKey : uint8_t;
+diff --git a/Source/JavaScriptCore/runtime/IntlObject.cpp b/Source/JavaScriptCore/runtime/IntlObject.cpp
+index f7dc4d578d77..a6ccbe1b9f74 100644
+--- a/Source/JavaScriptCore/runtime/IntlObject.cpp
++++ b/Source/JavaScriptCore/runtime/IntlObject.cpp
+@@ -153,7 +153,6 @@ namespace JSC {
+   getCanonicalLocales   intlObjectFuncGetCanonicalLocales            DontEnum|Function 1
+   Collator              createCollatorConstructor                    DontEnum|PropertyCallback
+   DateTimeFormat        createDateTimeFormatConstructor              DontEnum|PropertyCallback
+-  DisplayNames          createDisplayNamesConstructor                DontEnum|PropertyCallback
+   Locale                createLocaleConstructor                      DontEnum|PropertyCallback
+   NumberFormat          createNumberFormatConstructor                DontEnum|PropertyCallback
+   PluralRules           createPluralRulesConstructor                 DontEnum|PropertyCallback
+@@ -239,6 +238,11 @@ void IntlObject::finishCreation(VM& vm, JSGlobalObject* globalObject)
+     Base::finishCreation(vm);
+     ASSERT(inherits(info()));
+     JSC_TO_STRING_TAG_WITHOUT_TRANSITION();
++#if HAVE(ICU_U_LOCALE_DISPLAY_NAMES)
++    putDirectWithoutTransition(vm, vm.propertyNames->DisplayNames, createDisplayNamesConstructor(vm, this), static_cast<unsigned>(PropertyAttribute::DontEnum));
++#else
++    UNUSED_PARAM(&createDisplayNamesConstructor);
++#endif
+ #if HAVE(ICU_U_LIST_FORMATTER)
+     putDirectWithoutTransition(vm, vm.propertyNames->ListFormat, createListFormatConstructor(vm, this), static_cast<unsigned>(PropertyAttribute::DontEnum));
+ #else
+diff --git a/Source/cmake/OptionsGTK.cmake b/Source/cmake/OptionsGTK.cmake
+index 5e653a9e0b5a..0977f2c49037 100644
+--- a/Source/cmake/OptionsGTK.cmake
++++ b/Source/cmake/OptionsGTK.cmake
+@@ -19,7 +19,7 @@ find_package(Freetype 2.4.2 REQUIRED)
+ find_package(LibGcrypt 1.6.0 REQUIRED)
+ find_package(GLIB 2.56.4 REQUIRED COMPONENTS gio gio-unix gobject gthread gmodule)
+ find_package(HarfBuzz 0.9.18 REQUIRED COMPONENTS ICU)
+-find_package(ICU 61.2 REQUIRED COMPONENTS data i18n uc)
++find_package(ICU 60.2 REQUIRED COMPONENTS data i18n uc)
+ find_package(JPEG REQUIRED)
+ find_package(LibXml2 2.8.0 REQUIRED)
+ find_package(PNG REQUIRED)
+-- 
+2.31.1
+
