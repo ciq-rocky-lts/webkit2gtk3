@@ -1,0 +1,14 @@
+diff --git a/Source/WebKit/UIProcess/API/glib/WebKitWebContext.cpp b/Source/WebKit/UIProcess/API/glib/WebKitWebContext.cpp
+index bd2d4d20206f..0fe471bde384 100644
+--- a/Source/WebKit/UIProcess/API/glib/WebKitWebContext.cpp
++++ b/Source/WebKit/UIProcess/API/glib/WebKitWebContext.cpp
+@@ -415,6 +415,9 @@ static void webkitWebContextConstructed(GObject* object)
+         g_clear_pointer(&priv->memoryPressureSettings, webkit_memory_pressure_settings_free);
+     }
+ 
++    if (!g_strcmp0(g_get_prgname(), "evolution"))
++        configuration.setUsesSingleWebProcess(true);
++
+     if (!priv->websiteDataManager)
+         priv->websiteDataManager = adoptGRef(webkit_website_data_manager_new("local-storage-directory", priv->localStorageDirectory.data(), nullptr));
+ 
